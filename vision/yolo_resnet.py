@@ -31,9 +31,7 @@ class SSH(nn.Module):
     def __init__(self, in_channel, out_channel):
         super(SSH, self).__init__()
         assert out_channel % 4 == 0
-        leaky = 0
-        if (out_channel <= 64):
-            leaky = 0.1
+
         self.conv3X3 = conv_bn_no_relu(in_channel, out_channel//2, stride=1)
 
         self.conv5X5_1 = conv_bn(in_channel, out_channel//4, stride=1)
@@ -130,7 +128,6 @@ class Yolo_V3(nn.Module):
         self.fpn = FPN(in_channels_list, out_channels)
         self.ssh1 = SSH(out_channels, out_channels)
         self.ssh2 = SSH(out_channels, out_channels)
-        self.ssh3 = SSH(out_channels, out_channels)
 
         self.yolo_head = self._make_yolo_head(fpn_num=3, inchannels=out_channels)
 
@@ -146,7 +143,7 @@ class Yolo_V3(nn.Module):
         fpn = list(fpn)
         feature1 = self.ssh1(fpn[0])
         feature2 = self.ssh2(fpn[1])
-        feature3 = self.ssh3(fpn[2])
+        feature3 = fpn[2]
         features = [feature3, feature2, feature1]
 
         yolos = [self.yolo_head[i](feature) for i, feature in enumerate(features)]

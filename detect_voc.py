@@ -5,8 +5,8 @@ import torch
 import cv2
 import torch.backends.cudnn as cudnn
 import time
-from vision.yolo import Yolo_V3
-from tools.voc_data import labels
+from vision.yolo_resnet import Yolo_V3
+from tools.voc_data import labels, anchors
 from tools.utils import decode_netout, correct_yolo_boxes, do_nms, draw_boxes, preprocess_input
 
 
@@ -15,13 +15,11 @@ parser.add_argument('-m', '--trained_model', default='./weights/Final.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--save_folder', default='./result', type=str, help='Dir to save img')
 parser.add_argument('--cpu', default=True, help='Use cpu inference')
-parser.add_argument('--confidence_threshold', default=0.5, type=float, help='confidence_threshold')
+parser.add_argument('--confidence_threshold', default=0.7, type=float, help='confidence_threshold')
 parser.add_argument('--nms_threshold', default=0.3, type=float, help='nms_threshold')
-parser.add_argument('--anchors', default=[[22, 42], [47, 138], [67, 66], [85, 227], [140, 127], [146, 288], [231, 335],
-                                          [294, 183], [366, 355]], type=list, help="anchor size[w, h]")
 parser.add_argument('--net_w', default=416, type=int)
 parser.add_argument('--net_h', default=416, type=int)
-parser.add_argument('--input_path', default='./data/', type=str, help="image or images dir")
+parser.add_argument('--input_path', default='', type=str, help="image or images dir")
 args = parser.parse_args()
 
 
@@ -38,7 +36,7 @@ if __name__ == '__main__':
     cpu = args.cpu
     confidence_threshold = args.confidence_threshold
     nms_thresh = args.nms_threshold
-    anchors = args.anchors
+
     class_num = len(labels)
     device = torch.device("cpu" if cpu else "cuda")
 

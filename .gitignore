@@ -5,3 +5,4 @@ weights
 result
 *.ipynb
 *.zip
+vision/*.pth

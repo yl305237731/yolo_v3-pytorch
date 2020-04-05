@@ -6,14 +6,16 @@ from torch.utils.data import Dataset
 from tools.utils import anchor_iou
 
 
-labels = ["background", "face"]
+labels = ["face"]
+anchors = [[2, 4], [4, 8], [7, 13], [12, 24], [20, 35], [35, 56], [56, 96], [103, 151], [180, 237]]
 
 
 class WiderFaceDataset(Dataset):
 
-    def __init__(self, img_root, label_path, target_size, anchors, reduction=32, max_box_per_image=100, name_list=None, shuffle=True, augmentation=None, transform=None):
+    def __init__(self, img_root, label_path, target_size, anchors, reduction=32, max_box_per_image=100, name_list=None,
+                 augmentation=None, transform=None):
         if name_list is None:
-            name_list = ["background", "face"]
+            name_list = ["face"]
         self.anchors = anchors
         self.img_root = img_root
         self.label_path = label_path
@@ -22,7 +24,6 @@ class WiderFaceDataset(Dataset):
         self.name_list = name_list
         self.class_num = len(self.name_list)
         self.transform = transform
-        self.shuffle = shuffle
         self.max_box_per_image = max_box_per_image
         self.augmentation = augmentation
         self.img_names, self.img_bboxs = self.parse_label()
@@ -52,7 +53,6 @@ class WiderFaceDataset(Dataset):
         grid_w = [4 * base_grid_w, 2 * base_grid_w, base_grid_w]
         grid_h = [4 * base_grid_h, 2 * base_grid_h, base_grid_h]
 
-        #for 416 * 416 input
         #yolo1: 13 * 13
         yolo_1 = torch.zeros(3, 4 + 1 + self.class_num, int(grid_h[2] * grid_w[2]))
         # mask[:, 0, :] anchor mask, mask[:, 1, :] object mask
@@ -85,6 +85,10 @@ class WiderFaceDataset(Dataset):
                     max_index = i
                     max_iou = iou
             # Small anchors are assigned to the lower levels, and large anchors are assigned to the higher levels
+            # ignore hard gt
+            if max_iou <= 0.2:
+                continue
+
             level = max_index // 3
             yolo = yolos[level]
             mask = yolo_masks[level]
@@ -104,14 +108,15 @@ class WiderFaceDataset(Dataset):
             w_log = torch.log(w / anchor_w)
             h_log = torch.log(h / anchor_h)
             obj_conf = torch.Tensor([1])
-            cls = torch.Tensor([0, 1])
+            # face: 1
+            cls = torch.Tensor([1])
             grid_info = torch.cat([x_offset.view(-1, 1), y_offset.view(-1, 1), w_log.view(-1, 1), h_log.view(-1, 1),
                                    obj_conf.view(-1, 1), cls.view(1, -1)], dim=1)
             yolo[max_index % 3, :, int(row * grid_w[level] + col)] = grid_info.clone()
             mask[max_index % 3, int(row * grid_w[level] + col)] = 1
         yolo_1_all = [yolo_1, yolo_1_mask, true_bboxs[2]]
         yolo_2_all = [yolo_2, yolo_2_mask, true_bboxs[1]]
-        yolo_3_all = [yolo_3, yolo_3_mask, true_bboxs[1]]
+        yolo_3_all = [yolo_3, yolo_3_mask, true_bboxs[0]]
         return yolo_1_all, yolo_2_all, yolo_3_all
 
     def parse_label(self):

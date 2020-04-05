@@ -6,16 +6,17 @@ from skimage.util import random_noise
 from skimage import exposure
 
 
-class VOCDataAugmentation:
+class DetectionAugmentation:
 
     def __init__(self, rotation_rate=0.5, max_rotation_angle=15, crop_rate=0.3, shift_rate=0.3, change_light_rate=0.3,
-                 add_noise_rate=0.3):
+                 add_noise_rate=0.3, channel_rate=0.3):
         self.rotation_rate = rotation_rate
         self.max_rotation_angle = max_rotation_angle
         self.crop_rate = crop_rate
         self.shift_rate = shift_rate
         self.change_light_rate = change_light_rate
         self.add_noise_rate = add_noise_rate
+        self.channel_rate = channel_rate
 
     def noise(self, img):
         return random_noise(img, mode='gaussian', clip=True) * 255
@@ -137,7 +138,16 @@ class VOCDataAugmentation:
 
         return shift_img, shift_bboxes
 
-    def augment(self, img, bboxs, crop=True, rotate=True, shift=True, light=True, noise=True, withName=False):
+    def channel_permute(self, img):
+        order = [0, 1, 2]
+        random.shuffle(order)
+        img1 = img.copy()
+        img1[:, :, 0] = img[:, :, order[0]]
+        img1[:, :, 1] = img[:, :, order[1]]
+        img1[:, :, 2] = img[:, :, order[2]]
+        return img1
+
+    def augment(self, img, bboxs, crop=True, rotate=True, shift=True, light=True, noise=True, channel=True, withName=False):
         if crop and random.random() < self.crop_rate:
             img, bboxs = self.crop(img, bboxs, withName=withName)
 
@@ -155,4 +165,6 @@ class VOCDataAugmentation:
         if noise and random.random() < self.add_noise_rate:
             img = self.noise(img)
 
+        if channel and random.random() < self.channel_rate:
+            img = self.channel_permute(img)
         return img, bboxs

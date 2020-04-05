@@ -2,7 +2,6 @@ import torch
 import cv2
 import os
 import math
-import random
 import xml.etree.ElementTree as ET
 from torch.utils.data import Dataset
 from tools.utils import anchor_iou
@@ -11,10 +10,13 @@ from tools.utils import anchor_iou
 labels = ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog',
           'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
 
+anchors = [[22, 42], [47, 138], [67, 66], [85, 227], [140, 127], [146, 288], [231, 335], [294, 183], [366, 355]]
+
 
 class VOCDataset(Dataset):
 
-    def __init__(self, img_root, xml_root, target_size, anchors, name_list, reduction=32, max_box_per_image=30, shuffle=True, augmentation=None, transform=None):
+    def __init__(self, img_root, xml_root, target_size, anchors, name_list, reduction=32, max_box_per_image=30,
+                 augmentation=None, transform=None):
         self.anchors = anchors
         self.img_root = img_root
         self.xml_root = xml_root
@@ -23,7 +25,6 @@ class VOCDataset(Dataset):
         self.name_list = name_list
         self.class_num = len(self.name_list)
         self.transform = transform
-        self.shuffle = shuffle
         self.max_box_per_image = max_box_per_image
         self.augmentation = augmentation
         self.img_names, self.img_bboxs = self.parse_xml()
@@ -54,7 +55,6 @@ class VOCDataset(Dataset):
         grid_h = [4 * base_grid_h, 2 * base_grid_h, base_grid_h]
 
         yolo_1 = torch.zeros(3, 4 + 1 + self.class_num, int(grid_h[2] * grid_w[2]))
-        # mask[:, 0, :] anchor mask, mask[:, 1, :] object mask
         yolo_1_mask = torch.zeros(3, int(grid_h[2] * grid_w[2]))
 
         yolo_2 = torch.zeros(3, 4 + 1 + self.class_num, int(grid_h[1] * grid_w[1]))
@@ -82,6 +82,8 @@ class VOCDataset(Dataset):
                     max_index = i
                     max_iou = iou
             # Small anchors are assigned to the lower levels, and large anchors are assigned to the higher levels
+            if max_iou <= 0.2:
+                continue
             level = max_index // 3
             yolo = yolos[level]
             mask = yolo_masks[level]
@@ -101,14 +103,15 @@ class VOCDataset(Dataset):
             w_log = torch.log(w / anchor_w)
             h_log = torch.log(h / anchor_h)
             obj_conf = torch.Tensor([1])
-            cls = self.to_onehot(box[4])
+            # cls = self.to_onehot(box[4])
+            cls = torch.Tensor([1])
             grid_info = torch.cat([x_offset.view(-1, 1), y_offset.view(-1, 1), w_log.view(-1, 1), h_log.view(-1, 1),
                                    obj_conf.view(-1, 1), cls.view(1, -1)], dim=1)
             yolo[max_index % 3, :, int(row * grid_w[level] + col)] = grid_info.clone()
             mask[max_index % 3, int(row * grid_w[level] + col)] = 1
         yolo_1_all = [yolo_1, yolo_1_mask, true_bboxs[2]]
         yolo_2_all = [yolo_2, yolo_2_mask, true_bboxs[1]]
-        yolo_3_all = [yolo_3, yolo_3_mask, true_bboxs[1]]
+        yolo_3_all = [yolo_3, yolo_3_mask, true_bboxs[0]]
         return yolo_1_all, yolo_2_all, yolo_3_all
 
     def get_label_index(self, name):
@@ -124,10 +127,8 @@ class VOCDataset(Dataset):
         img_bboxs = []
         xml_dir = os.listdir(self.xml_root)
 
-        if self.shuffle:
-            random.shuffle(xml_dir)
-
         for xml_name in xml_dir:
+            print(xml_name)
             xml_path = os.path.join(self.xml_root, xml_name)
             tree = ET.parse(xml_path)
             root = tree.getroot()
@@ -151,4 +152,5 @@ class VOCDataset(Dataset):
                 img_names.remove(img_name)
             else:
                 img_bboxs.append(box_info)
+        print(len(img_names))
         return img_names, img_bboxs

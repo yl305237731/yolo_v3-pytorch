@@ -4,6 +4,8 @@ import numpy as np
 import cv2
 import torchvision.transforms as transforms
 import torch
+import copy
+import keras
 
 
 def anchor_iou(box, anchor):
@@ -48,35 +50,6 @@ def adjust_learning_rate(initial_lr, optimizer, gamma, epoch, step_index, iterat
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
     return lr
-
-
-class CosineDecayLR(object):
-    def __init__(self, optimizer, T_max, lr_init, lr_min=0., warmup=0):
-        """
-        a cosine decay scheduler about steps, not epochs.
-        :param optimizer: ex. optim.SGD
-        :param T_max:  max steps, and steps=epochs * batches
-        :param lr_max: lr_max is init lr.
-        :param warmup: in the training begin, the lr is smoothly increase from 0 to lr_init, which means "warmup",
-                        this means warmup steps, if 0 that means don't use lr warmup.
-        """
-        super(CosineDecayLR, self).__init__()
-        self.__optimizer = optimizer
-        self.__T_max = T_max
-        self.__lr_min = lr_min
-        self.__lr_max = lr_init
-        self.__warmup = warmup
-
-
-    def step(self, t):
-        if self.__warmup and t < self.__warmup:
-            lr = self.__lr_max / self.__warmup * t
-        else:
-            T_max = self.__T_max - self.__warmup
-            t = t - self.__warmup
-            lr = self.__lr_min + 0.5 * (self.__lr_max - self.__lr_min) * (1 + np.cos(t/T_max * np.pi))
-        for param_group in self.__optimizer.param_groups:
-            param_group["lr"] = lr
 
 
 def custom_collate_fn(batch):
@@ -149,7 +122,7 @@ def parse_wider_annotation(label_txt_path, img_root):
         if line.startswith('#'):
             if not is_First:
                 if len(img['object']) > 0:
-                    all_insts += [img.copy()]
+                    all_insts += [copy.deepcopy(img)]
                     img = {'object': []}
                     obj.clear()
             img_path = line[2:]
@@ -166,8 +139,6 @@ def parse_wider_annotation(label_txt_path, img_root):
             line = line.split(' ')
             x_min, y_min, w, h = float(line[0]), float(line[1]), float(line[2]), float(line[3])
 
-            # [x1, y1, x2, y2, class_index]
-            # for widerface, set face as 1, background as 0
             obj["xmin"] = x_min
             obj["ymin"] = y_min
             obj["xmax"] = x_min + w
@@ -227,6 +198,7 @@ def decode_netout(netout, anchors, confidence_thresh, net_h=416, net_w=416):
                 classes = torch.sigmoid(box[5:])
             box = BoundBox(x - w / 2, y - h / 2, x + w / 2, y + h / 2, box[4], classes)
             boxes.append(box)
+
     return boxes
 
 
@@ -258,7 +230,7 @@ def iou(box_a, box_b):
         inter_h = max(y_br - y_lt, 0)
         return float(inter_w * inter_h)
     area_inter = intersection(box_a, box_b)
-    return area_inter / (area_boxa + area_boxb - area_inter)
+    return area_inter / (area_boxa + area_boxb - area_inter + 1e-5)
 
 
 def do_nms(boxes, nms_thresh=0.4):
@@ -300,3 +272,39 @@ def draw_boxes(image, boxes, labels):
                         color=(255, 0, 0),
                         thickness=2)
     return image
+
+
+def pyt_to_keras(pytorch_model, keras_model):
+    pyt_state_dict = pytorch_model.state_dict()
+    for idx, layer in enumerate(keras_model.layers):
+        if type(layer).__name__.endswith('Conv2D'):
+            # Keras 2D Convolutional layer: height * width * input channels * output channels
+            # PyTorch 2D Convolutional layer: output channels * input channels * height * width
+            name = layer.name
+            weights = np.transpose(pyt_state_dict[name + '.weight'].numpy(), (2, 3, 1, 0))
+            bias = pyt_state_dict[name + '.bias'].numpy()
+            keras_model.layers[idx].set_weights([weights, bias])
+        elif type(layer).__name__.endswith('Dense'):
+            # Keras Linear Layer: input neurons * output neurons
+            # PyTorch Linear Layer: output neurons * input neurons
+            name = layer.name
+            weights = np.transpose(pyt_state_dict[name + '.weight'].numpy(), (1, 0))
+            bias = pyt_state_dict[name + '.bias'].numpy()
+            keras_model.layers[idx].set_weights([weights, bias])
+    return keras_model
+
+
+def keras_to_pyt(km, pm):
+    weight_dict = dict()
+    for layer in km.layers:
+        if type(layer) is keras.layers.convolutional.Conv2D:
+            weight_dict[layer.get_config()['name'] + '.weight'] = np.transpose(layer.get_weights()[0], (3, 2, 0, 1))
+            weight_dict[layer.get_config()['name'] + '.bias'] = layer.get_weights()[1]
+        elif type(layer) is keras.layers.Dense:
+            weight_dict[layer.get_config()['name'] + '.weight'] = np.transpose(layer.get_weights()[0], (1, 0))
+            weight_dict[layer.get_config()['name'] + '.bias'] = layer.get_weights()[1]
+    pyt_state_dict = pm.state_dict()
+    for key in pyt_state_dict.keys():
+        pyt_state_dict[key] = torch.from_numpy(weight_dict[key])
+    pm.load_state_dict(pyt_state_dict)
+    return pm

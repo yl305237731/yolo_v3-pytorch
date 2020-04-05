@@ -12,9 +12,9 @@ sys.path.append("..")
 sys.path.append("../tools")
 
 parser = argparse.ArgumentParser("--------gen_anchors--------")
-parser.add_argument('--annos_root', default='/Users/linyang/Desktop/data/VOCdevkit/VOC2012/Annotations/', type=str, help='voc: annotations xml dir, widerface: label.txt path')
-parser.add_argument('--imgs_root', default='/Users/linyang/Desktop/data/VOCdevkit/VOC2012/JPEGImages/', type=str, help='images dir')
-parser.add_argument('--data_type', default='voc', type=str, help="voc for VOC xml, wider for WiderFace")
+parser.add_argument('--annos_root', default='/Users/linyang/Desktop/data/WIDER_train/label.txt', type=str, help='voc: annotations xml dir, widerface: label.txt path')
+parser.add_argument('--imgs_root', default='/Users/linyang/Desktop/data/WIDER_train/images/', type=str, help='images dir')
+parser.add_argument('--data_type', default='wider', type=str, help="voc for VOC xml, wider for WiderFace")
 parser.add_argument('--anchor_num', default=9, type=int, help="anchor numbers")
 args = parser.parse_args()
 
@@ -123,4 +123,3 @@ if __name__ == '__main__':
     anchor_num = args.anchor_num
     data_type = args.data_type
     gen_anchors(annos_path, imgs_path, anchor_num, data_type)
-    [[22, 42], [47, 138], [67, 66], [85, 227], [140, 127], [146, 288], [231, 335], [294, 183], [366, 355]]
